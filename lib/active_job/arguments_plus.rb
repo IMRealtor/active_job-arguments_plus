@@ -1,5 +1,11 @@
 require 'logger'
-require 'ph_model'
+
+begin
+  require 'ph_model'
+rescue LoadError
+  # ignore
+end
+
 require 'active_job/arguments'
 require_relative 'arguments_plus/version'
 
@@ -7,20 +13,27 @@ ActiveJob::Arguments # pre-load so we extend the module
 
 module ActiveJob
   module ArgumentsPlus
-    TYPE_KEYS = {
-      Module => '_aj_module',
-      Logger => '_aj_logger',
-      PhModel => '_aj_ph_model'
-    }
+    def self.type_keys
+      @type_keys ||= begin
+        add_if_defined = lambda { |tk, klass_name|
+          tk[klass_name.constantize] = "_aj_#{klass_name.underscore}" if const_defined?(klass_name)
+        }
+        tk = {}
+        add_if_defined.call(tk, 'Module')
+        add_if_defined.call(tk, 'Logger')
+        add_if_defined.call(tk, 'PhModel')
+        tk
+      end
+    end
 
     def serialize_argument(argument)
-      arg_klass, info = TYPE_KEYS.find { |klass, _| klass === argument }
+      arg_klass, info = type_keys.find { |klass, _| klass === argument }
       arg_klass ? send("serialize_#{class_to_method(arg_klass.name)}", argument) : super
     end
 
     def deserialize_argument(argument)
       if argument.is_a?(Hash) && argument.size == 1
-        arg_klass, _ = TYPE_KEYS.find { |_, key| argument.key?(key) }
+        arg_klass, _ = type_keys.find { |_, key| argument.key?(key) }
         arg_klass ? send("deserialize_#{class_to_method(arg_klass.name)}") : super
       else
         super
@@ -34,11 +47,11 @@ module ActiveJob
     end
 
     def key_for(klass)
-      case TYPE_KEYS[klass]
+      case type_keys[klass]
       when Hash
-        TYPE_KEYS[klass][:key]
+        type_keys[klass][:key]
       else
-        TYPE_KEYS[klass]
+        type_keys[klass]
       end
     end
 
@@ -61,7 +74,7 @@ module ActiveJob
 
     def serialize_ph_model(argument)
       {
-        key_for(Logger) => {
+        key_for(PhModel) => {
           'type' => argument.class.name,
           'data' => argument.as_json,
         }
@@ -69,8 +82,8 @@ module ActiveJob
     end
 
     def deserialize_ph_model(argument)
-      info = argument[key_for(Logger)]
-      info['type'].constantize.build(info['data'])
+      info = argument[key_for(PhModel)]
+      info['type'].constantize.send(:build, info['data'])
     end
   end
 

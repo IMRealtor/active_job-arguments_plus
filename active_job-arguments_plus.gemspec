@@ -19,7 +19,6 @@ Gem::Specification.new do |gem|
   gem.test_files    = Rake::FileList['{test|spec|features}/**/*']
   gem.require_paths = ['lib']
 
-  gem.add_dependency 'ph_model', '~> 1.1'
   gem.add_dependency 'activejob', '~> 5.1'
 
   gem.add_development_dependency 'rake', '~> 12.3'
