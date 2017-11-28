@@ -34,13 +34,15 @@ module ActiveJob
     def deserialize_argument(argument)
       if argument.is_a?(Hash) && argument.size == 1
         arg_klass, _ = type_keys.find { |_, key| argument.key?(key) }
-        arg_klass ? send("deserialize_#{class_to_method(arg_klass.name)}") : super
+        arg_klass ? send("deserialize_#{class_to_method(arg_klass.name)}", argument) : super
       else
         super
       end
     end
 
     private
+
+    delegate :type_keys, to: 'ActiveJob::ArgumentsPlus'
 
     def class_to_method(klass_name)
       klass_name.underscore
@@ -65,11 +67,11 @@ module ActiveJob
     end
 
     def serialize_module(argument)
-      { key_for(Logger) => argument.name }
+      { key_for(Module) => argument.name }
     end
 
     def deserialize_module(argument)
-      argument[key_for(Logger)].constantize
+      argument[key_for(Module)].constantize
     end
 
     def serialize_ph_model(argument)
