@@ -7,6 +7,7 @@ rescue LoadError
 end
 
 require 'active_job/arguments'
+require 'globalid'
 require_relative 'arguments_plus/version'
 
 ActiveJob::Arguments # pre-load so we extend the module
@@ -22,25 +23,36 @@ module ActiveJob
         add_if_defined.call(tk, 'Module')
         add_if_defined.call(tk, 'Logger')
         add_if_defined.call(tk, 'PhModel')
+        add_if_defined.call(tk, 'Time')
         tk
       end
     end
 
     def serialize_argument(argument)
-      arg_klass, info = type_keys.find { |klass, _| klass === argument }
-      arg_klass ? send("serialize_#{class_to_method(arg_klass.name)}", argument) : super
+      arg_klass, _ = type_keys.find { |klass, _| klass === argument }
+      arg_klass ? serialize_local_argument(arg_klass, argument) : super
     end
 
     def deserialize_argument(argument)
       if argument.is_a?(Hash) && argument.size == 1
         arg_klass, _ = type_keys.find { |_, key| argument.key?(key) }
-        arg_klass ? send("deserialize_#{class_to_method(arg_klass.name)}", argument) : super
+        arg_klass ? deserialize_local_argument(arg_klass, argument) : super
       else
         super
       end
     end
 
     private
+
+    def serialize_local_argument(arg_klass, argument)
+      value = send("serialize_#{class_to_method(arg_klass.name)}", argument)
+      serialize_generic(arg_klass, value)
+    end
+
+    def deserialize_local_argument(arg_klass, argument)
+      value = deserialize_generic(arg_klass, argument)
+      send("deserialize_#{class_to_method(arg_klass.name)}", value)
+    end
 
     delegate :type_keys, to: 'ActiveJob::ArgumentsPlus'
 
@@ -57,8 +69,16 @@ module ActiveJob
       end
     end
 
+    def serialize_generic(klass, value)
+      {key_for(klass) => value}
+    end
+
+    def deserialize_generic(klass, argument)
+      argument[key_for(klass)]
+    end
+
     def serialize_logger(_)
-      { key_for(Logger) => true }
+      true
     end
 
     def deserialize_logger(_)
@@ -66,26 +86,31 @@ module ActiveJob
       Logger.new(STDOUT)
     end
 
-    def serialize_module(argument)
-      { key_for(Module) => argument.name }
+    def serialize_module(klass)
+      klass.name
     end
 
-    def deserialize_module(argument)
-      argument[key_for(Module)].constantize
+    def deserialize_module(klass_name)
+      klass_name.constantize
     end
 
-    def serialize_ph_model(argument)
+    def serialize_ph_model(model)
       {
-        key_for(PhModel) => {
-          'type' => argument.class.name,
-          'data' => argument.as_json,
-        }
+        'type' => model.class.name,
+        'data' => model.as_json,
       }
     end
 
-    def deserialize_ph_model(argument)
-      info = argument[key_for(PhModel)]
+    def deserialize_ph_model(info)
       info['type'].constantize.send(:build, info['data'])
+    end
+
+    def serialize_time(time)
+      time.to_f
+    end
+
+    def deserialize_time(unixtime)
+      Time.at(unixtime)
     end
   end
 
